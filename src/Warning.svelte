@@ -8,15 +8,23 @@
 
    const dispatch = createEventDispatcher();
 
-   export var active = false;
-   export var title = 'Confirm action';
-   export var message = 'Some shit is about to happen';
+   export var active = false;                            // Indica janela vísivel ou não
+   export var title = 'Confirm action';                  // String com o título a ser exibido
+   export var message = 'Some shit is about to happen';  // String com a descrição do aviso
 
+   /**
+    * Tratamento do evento 'click' do botão de confirmação.
+    * Despacha o evento 'confirm'.
+    */
    function confirm() {
       active = false;
       dispatch('confirm');
    }
 
+   /**
+    * Tratamento do evento 'click' do botão de cancelamento.
+    * Despacha o evento 'cancel'.
+    */
    function cancel() {
       active = false;
       dispatch('cancel');

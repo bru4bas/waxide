@@ -1,14 +1,14 @@
 {
-  "name": "editor",
+  "name": "waxide",
   "version": "0.0.1",
   "description": "Isso vai ser um editor um dia",
   "main": "index.html",
   "chromium-args": "--enable-logging=stderr",
   "window": {
     "icon": "img/icon.png",
-    "width": 800,
-    "height": 600,
+    "width": 1000,
+    "height": 800,
     "resizable": true,
-    "title": "Isso é uma janela"
+    "title": "WAX IDE"
   }
 }

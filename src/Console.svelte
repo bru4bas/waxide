@@ -1,5 +1,12 @@
 <script lang="ts">
-   let TheConsole = null;
+   let TheConsole = null;                    // Referência ao objeto DOM correspondente ao console
+
+   /**
+    * Inclui uma ou mais linhas ao console (delimitadas por \n).
+    * Rola (scroll) a janela se necessário.
+    * @param str Linha (string) a ser impresso.
+    * @param alert Código de cor para a mensagem ou null para cor padrão.
+    */
    export function print(str, alert=null) {
       let html = TheConsole.innerHTML;
       if(alert) html += `<b style="color: ${alert}">`;
@@ -15,6 +22,9 @@
       TheConsole.scrollTop = TheConsole.scrollHeight;
    }
 
+   /**
+    * Limpa todo o console.
+    */
    export function clear() {
       TheConsole.innerHTML = "";
    }
