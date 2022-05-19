@@ -13,6 +13,7 @@
    const fs = require('fs');
    const path = require('path');
    const os = require('os');
+   const process = require('process');
    const { spawn } = require('child_process');
 
    var tamanho = 300;                        // tamanho vertical da área do editor, alterado dinamicamente
@@ -28,13 +29,14 @@
    var searchText = "";                      // 
    var newsearch = true;
    var clipboard = nw.Clipboard.get();       // Referência ao objeto nw.Clipboard do sistema
+   var platform = "";
+   var exepath = "";
 
    /*
     * Mudar o título da janela ao carregar um novo arquivo.
     */
    $: changeTitle(arquivo);
    function changeTitle(nome) {
-      console.log("AQUI");
       let win = nw.Window.get();
       if(!nome) win.title = 'WAX IDE';
       else win.title = `WAX IDE  [${path.basename(nome)}]`;
@@ -45,8 +47,9 @@
     * Inclui tratamento do evento change ao objeto ace.editor.
     */
    function init() {
-      console.log('PLATFORM = ' + os.platform);
-      console.log('EXE PATH = ' + nw.App.startPath);
+      platform = os.platform;
+      exepath = nw.App.startPath;
+
       editor.on('change', () => {
          if(!loading) changed = true;
          loading = false;
@@ -147,6 +150,57 @@
    }
 
    /**
+    * Executa um programa em um processo independente, transferindo sua saída para o objeto 'terminal'.
+    * Hack para execução no Windows incluído (FIXME: talvez exista uma forma melhor de fazer isso).
+    * @param {String} cmd Nome do arquivo a executar.
+    * @param {Array} args Array com os parâmetros.
+    * @param {function} done Função a ser chamada quando o programa encerrar.
+    */
+   function run_exe(cmd, args, done) {
+      /*
+       * Corrige o nome e muda o diretório de trabalho no caso do Windows.
+       */
+      let cwd = ".";
+      if(platform == 'win32') {
+         cmd += '.exe';
+         cwd = process.cwd();
+         process.chdir(exepath);
+      }
+
+     /*
+      * Dispara um processo com spawn.
+      */
+     let proc = spawn(cmd, args);
+     proc.stdout.on('data', (data) => terminal.print(data.toString()));
+     proc.stderr.on('data', (data) => terminal.print(data.toString()));
+     proc.on('close', (res) => {
+        if(platform == 'win32') process.chdir(cwd);
+        if(done) done(res);
+     });
+   }
+
+   /**
+    * Procura por arquivos com a extensão vcd (Value Change Dump) no diretório atual.
+    * @return {Array} Array com nomes de arquivo.
+    */
+   function find_vcd() {
+      let files = fs.readdirSync('.');
+      let res = files.filter(name => name.match(/\.vcd$/ig));
+      return res;
+   }
+
+   /**
+    * Limpa os arquivos temporários no diretório atual.
+    */
+   function do_cleanup() {
+      if(fs.existsSync('out.sim')) {
+         fs.unlinkSync('out.sim');
+      }
+      let vcd = find_vcd();
+      vcd.forEach(name => fs.unlinkSync(name));
+   }
+
+   /**
     * Executa o processo de compilação.
     * @param run Caso seja true, inicia a simulação ao final da compilação.
     */
@@ -166,33 +220,26 @@
      }
 
      /*
-      * Inicia executável do compilador e captura seu stdout/stderr.
-      * Configura tratamento do evento 'close' (processo terminado).
+      * Inicia executável do compilador.
       */
-     let proc = spawn('iverilog', ['-o', 'out.sim', arquivo]);
-     proc.stdout.on('data', (data) => terminal.print(data.toString()));
-     proc.stderr.on('data', (data) => terminal.print(data.toString()));
-     proc.on('close', (code) => {
-        if(code == 0) {
+     do_cleanup();
+     run_exe('iverilog', ['-o', 'out.sim', arquivo], (res) => {
+        if(res == 0) {
            terminal.print('Compilation succesful\n\n\n\n\n', 'blue');
            if(run) do_run();
         } else terminal.print('Compilation failed\n\n\n\n\n', 'red');
-      });
+     });
    }
 
    /**
     * Executa o processo de simulação e inicia GTKWave ao final.
     */
    function do_run() {
-     let proc = spawn('vvp', ['out.sim']);
-     proc.stdout.on('data', (data) => terminal.print(data.toString()));
-     proc.stderr.on('data', (data) => terminal.print(data.toString()));
-     proc.on('close', (code) => {
-        if(code == 0) {
-           terminal.print('Simulation succesful\n\n\n\n', 'blue');
-           do_wave();
-        }
-        else terminal.print('Simulation failed\n\n\n\n', 'red');
+      run_exe('vvp', ['out.sim'], (res) => {
+         if(res == 0) {
+            terminal.print('Simulation succesful\n\n\n\n', 'blue');
+            do_wave();
+         } else terminal.print('Simulation failed\n\n\n\n', 'red');
       });
    }
 
@@ -200,7 +247,12 @@
     * Executa o processo GTKWave.
     */
    function do_wave() {
-     let proc = spawn('gtkwave', ['dump.vcd']);
+      let vcd = find_vcd();
+      if(vcd.length == 0) {
+         terminal.print('No .vcd files found\n\n\n\n', 'red');
+         return;
+      }
+      run_exe('gtkwave', [vcd[0]]);
    }
 </script>
 
