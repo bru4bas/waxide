@@ -32,14 +32,16 @@
    var platform = "";
    var exepath = "";
 
+   let last_cwd = ".";
+
    /*
     * Mudar o título da janela ao carregar um novo arquivo.
     */
    $: changeTitle(arquivo);
    function changeTitle(nome) {
       let win = nw.Window.get();
-      if(!nome) win.title = 'WAX IDE';
-      else win.title = `WAX IDE  [${path.basename(nome)}]`;
+      if(!nome) win.window.document.title = 'WAX IDE';
+      else win.window.document.title = `WAX IDE  [${path.basename(nome)}]`;
    }
 
    /*
@@ -149,6 +151,20 @@
       tamanho = event.detail.primarySize;
    }
 
+
+   function set_workdir() {
+      if(platform == 'win32') {
+         last_cwd = process.cwd();
+         process.chdir(exepath);
+      }
+   }
+
+   function reset_workdir() {
+      if(platform == 'win32') {
+         process.chdir(last_cwd);
+      }
+   }
+
    /**
     * Executa um programa em um processo independente, transferindo sua saída para o objeto 'terminal'.
     * Hack para execução no Windows incluído (FIXME: talvez exista uma forma melhor de fazer isso).
@@ -158,14 +174,9 @@
     */
    function run_exe(cmd, args, done) {
       /*
-       * Corrige o nome e muda o diretório de trabalho no caso do Windows.
+       * Corrige o nome no caso do Windows.
        */
-      let cwd = ".";
-      if(platform == 'win32') {
-         cmd += '.exe';
-         cwd = process.cwd();
-         process.chdir(exepath);
-      }
+      if(platform == 'win32') cmd += '.exe';
 
      /*
       * Dispara um processo com spawn.
@@ -174,7 +185,6 @@
      proc.stdout.on('data', (data) => terminal.print(data.toString()));
      proc.stderr.on('data', (data) => terminal.print(data.toString()));
      proc.on('close', (res) => {
-        if(platform == 'win32') process.chdir(cwd);
         if(done) done(res);
      });
    }
@@ -222,12 +232,17 @@
      /*
       * Inicia executável do compilador.
       */
+     set_workdir();
      do_cleanup();
      run_exe('iverilog', ['-o', 'out.sim', arquivo], (res) => {
         if(res == 0) {
-           terminal.print('Compilation succesful\n\n\n\n\n', 'blue');
+           terminal.print('Compilation succesful\n', 'blue');
            if(run) do_run();
-        } else terminal.print('Compilation failed\n\n\n\n\n', 'red');
+           else reset_workdir();
+        } else {
+           terminal.print('Compilation failed\n', 'red');
+           reset_workdir();
+        }
      });
    }
 
@@ -237,9 +252,12 @@
    function do_run() {
       run_exe('vvp', ['out.sim'], (res) => {
          if(res == 0) {
-            terminal.print('Simulation succesful\n\n\n\n', 'blue');
+            terminal.print('Simulation succesful\n', 'blue');
             do_wave();
-         } else terminal.print('Simulation failed\n\n\n\n', 'red');
+         } else {
+            terminal.print('Simulation failed\n', 'red');
+            reset_workdir();
+         }
       });
    }
 
@@ -249,10 +267,10 @@
    function do_wave() {
       let vcd = find_vcd();
       if(vcd.length == 0) {
-         terminal.print('No .vcd files found\n\n\n\n', 'red');
+         terminal.print('No .vcd files found\n', 'red');
          return;
       }
-      run_exe('gtkwave', [vcd[0]]);
+      run_exe('gtkwave', [vcd[0]], () => reset_workdir());
    }
 </script>
 
