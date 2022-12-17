@@ -4,6 +4,7 @@
    import { onMount } from 'svelte';
    import { AceEditor } from "svelte-ace";
    import "brace/mode/verilog";
+   import "brace/mode/vhdl";
    import "brace/theme/chrome";
    import "brace/ext/language_tools";
    import "brace/ext/searchbox";
@@ -33,6 +34,8 @@
    var exepath = "";
 
    let last_cwd = ".";
+   let modo_vhdl = false;                    // true = VHDL, false = Verilog
+   let lineerror = -1;
 
    /*
     * Mudar o título da janela ao carregar um novo arquivo.
@@ -52,6 +55,11 @@
       platform = os.platform;
       exepath = nw.App.startPath;
 
+      terminal.print('Welcome to ', 'black');
+      terminal.print('WAX IDE', 'green');
+      terminal.print(' v.');
+      terminal.print('1.0.3', 'red');
+      terminal.print(' - 2018-2021 Bruno Basseto (GPLv.3)\n');
       editor.on('change', () => {
          if(!loading) changed = true;
          loading = false;
@@ -78,7 +86,29 @@
       arquivo = "";
       changed = false;
       loading = true;
-      texto = "module myModule;\n\nendmodule";
+      if(modo_vhdl) texto = `
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.std_logic_arith.all;
+use ieee.std_logic_unsigned.all;
+
+entity top is
+end entity;
+
+architecture sim of top is 
+begin
+   process begin
+      wait;
+   end process;
+end architecture;`;
+      else texto = `
+module top;
+   initial begin
+      $dumpfile("out.vcd");
+      $dumpvars;
+      $finish;
+   end
+endmodule`;
    }
 
    /**
@@ -99,6 +129,16 @@
       searchText = event.detail;
       newsearch = true;
       editor.findAll(searchText);
+   }
+
+   function onMode(event) {
+      if(event.detail) {
+         editor.session.setMode('ace/mode/vhdl');
+         modo_vhdl = true;
+      } else {
+         editor.session.setMode('ace/mode/verilog');
+         modo_vhdl = false;
+      }
    }
 
    /**
@@ -165,6 +205,12 @@
       }
    }
 
+   function parse_error(line) {
+      let n = line.match(/:(\d+):/);
+      if(n && (n.length > 1) && (lineerror < 0)) lineerror = parseInt(n[1]);
+      terminal.print(line);
+   }
+
    /**
     * Executa um programa em um processo independente, transferindo sua saída para o objeto 'terminal'.
     * Hack para execução no Windows incluído (FIXME: talvez exista uma forma melhor de fazer isso).
@@ -183,7 +229,7 @@
       */
      let proc = spawn(cmd, args);
      proc.stdout.on('data', (data) => terminal.print(data.toString()));
-     proc.stderr.on('data', (data) => terminal.print(data.toString()));
+     proc.stderr.on('data', (data) => parse_error(data.toString()));
      proc.on('close', (res) => {
         if(done) done(res);
      });
@@ -203,9 +249,15 @@
     * Limpa os arquivos temporários no diretório atual.
     */
    function do_cleanup() {
+      lineerror = -1;
       if(fs.existsSync('out.sim')) {
          fs.unlinkSync('out.sim');
       }
+      if(fs.existsSync('out.ghw')) {
+         fs.unlinkSync('out.ghw');
+      }
+      let cfs = fs.readdirSync('.').filter(name => name.match(/\.cf$/ig));
+      cfs.forEach(name => fs.unlinkSync(name));
       let vcd = find_vcd();
       vcd.forEach(name => fs.unlinkSync(name));
    }
@@ -234,43 +286,85 @@
       */
      set_workdir();
      do_cleanup();
-     run_exe('iverilog', ['-o', 'out.sim', arquivo], (res) => {
-        if(res == 0) {
-           terminal.print('Compilation succesful\n', 'blue');
-           if(run) do_run();
-           else reset_workdir();
-        } else {
-           terminal.print('Compilation failed\n', 'red');
-           reset_workdir();
-        }
-     });
+     //run_exe('iverilog', ['-o', 'out.sim', arquivo], (res) => {
+     if(modo_vhdl) {
+        run_exe('ghdl', ['-a', '--std=08', '-fsynopsys',  arquivo], (res) => {
+           if(res == 0) {
+              terminal.print('Compilation succesful\n', 'blue');
+              if(run) do_run();
+              else reset_workdir();
+           } else {
+              terminal.print('Compilation failed\n', 'red');
+              if(lineerror > 0) editor.gotoLine(lineerror);
+              reset_workdir();
+           }
+         });
+      } else {
+         run_exe('iverilog', ['-o', 'out.sim', arquivo], (res) => {
+            if(res == 0) {
+               terminal.print('Compilation succesful\n', 'blue');
+               if(run) do_run();
+               else reset_workdir();
+            } else {
+               terminal.print('Compilation failed\n', 'red');
+               if(lineerror > 0) editor.gotoLine(lineerror);
+               reset_workdir();
+            }
+         });
+      }
    }
 
    /**
     * Executa o processo de simulação e inicia GTKWave ao final.
     */
    function do_run() {
-      run_exe('vvp', ['out.sim'], (res) => {
-         if(res == 0) {
-            terminal.print('Simulation succesful\n', 'blue');
-            do_wave();
-         } else {
-            terminal.print('Simulation failed\n', 'red');
-            reset_workdir();
-         }
-      });
+//      run_exe('vvp', ['out.sim'], (res) => {
+      if(modo_vhdl) {
+         run_exe('ghdl', ['-e', '--std=08', '-fsynopsys', 'top'], (res) => {
+            if(res == 0) {
+               run_exe('ghdl', ['-r', '--std=08', '-fsynopsys', 'top', '--wave=out.ghw'], (res) => {
+                  if(res == 0) {
+                     terminal.print('Simulation succesful\n', 'blue');
+                     do_wave();
+                  } else {
+                     terminal.print('Simulation failed\n', 'red');
+                     if(lineerror > 0) editor.gotoLine(lineerror);
+                     reset_workdir();
+                  }
+               });
+            } else {
+               terminal.print('Simulation failed\n', 'red');
+               reset_workdir();
+            }
+         });
+      } else {
+         run_exe('vvp', ['out.sim'], (res) => {
+            if(res == 0) {
+               terminal.print('Simulation succesful\n', 'blue');
+               do_wave();
+            } else {
+               terminal.print('Simulation failed\n', 'red');
+               if(lineerror > 0) editor.gotoLine(lineerror);
+               reset_workdir();
+            }
+         });
+      }
    }
 
    /**
     * Executa o processo GTKWave.
     */
    function do_wave() {
-      let vcd = find_vcd();
-      if(vcd.length == 0) {
-         terminal.print('No .vcd files found\n', 'red');
-         return;
+      if(modo_vhdl) {
+         run_exe('gtkwave', ['out.ghw'], () => reset_workdir());
+      } else {
+         let vcd = find_vcd();
+         if(vcd.length == 0) {
+            terminal.print('No .vcd files found\n', 'red');
+            return;
+         }
+         run_exe('gtkwave', [vcd[0]], () => reset_workdir());
       }
-      run_exe('gtkwave', [vcd[0]], () => reset_workdir());
    }
 </script>
 
@@ -281,6 +375,7 @@
                 on:save = {onFileSave} 
                 on:fnew = {onFileNew}
                 on:search = {onSearch}
+                on:mode = {onMode}
                 on:bClick = {onBClick} />
    <Split horizontal 
           initialPrimarySize = "70%" 
@@ -297,6 +392,7 @@
               theme = "chrome"
               options = {{ fontSize: 14,
                            behavioursEnabled: true,
+                           tabSize: 3,
                            useSoftTabs: true,
                            enableLiveAutocompletion: true }}
          />

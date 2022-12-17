@@ -7,9 +7,11 @@
    import { ButtonToolbar, Button, Tooltip, Icon } from 'sveltestrap';
    import Warning from "./Warning.svelte";
    import Toolbutton from "./ToolButton.svelte";
+   import Switch from "./Switch.svelte";
 
    export var fileName;                      // nome do arquivo aberto ou escolhido pelo usuário
    export var changed = false;               // flag indicando alteração realizada pelo editor
+   export var modo = false;                  // flag indicando o modo (false = verilog, true = VHDL)
    var newFileName;
    var loading = false;                      // flag sinalizando abertura de arquivo.
    
@@ -24,6 +26,14 @@
     */
    var searchText = "";
    $: dispatch('search', searchText);
+
+   /**
+    * Tratamento do evento de seleção do modo (VHDL/Verilog)
+    * Despacha o evento 'mode'.
+    */
+   function change() {
+      dispatch('mode', !modo);
+   }
 
    /**
     * Tratamento do evento de seleção de arquivo no diálogo de salvamento.
@@ -132,6 +142,11 @@
       </ButtonToolbar>
       <div class="search">
          <ButtonToolbar>
+            <div class="switch">
+               <span>Verilog</span>
+               <Switch bind:checked={modo} on:click={change}></Switch>
+               <span>VHDL</span>
+            </div>
             <input type="search" name="search" placeholder="Search..." bind:value={searchText} />
             <Toolbutton name="bot-find" icon="search" tip="Find" on:bClick={click} />
          </ButtonToolbar>
@@ -159,5 +174,12 @@
       border-radius: 8%/50%;
       padding-left: 20px;
       padding-right: 20px;
+   }
+   .switch {
+      display: flex;
+      flex-direction: row;
+      column-gap: 3px;
+      align-items: center;
+      margin-right: 15px;
    }
 </style>
