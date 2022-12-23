@@ -1,7 +1,7 @@
 
 # WAX IDE
 
-![Screenshot](screen.png?raw=true "Screenshot")
+![Screenshot](screenshot.png?raw=true "Screenshot")
 
 Wax IDE é um editor e simulador de código HDL baseado no [Icarus Verilog](http://iverilog.icarus.com/), [GHDL](http://ghdl.free.fr/)
 e no [GTKWave](http://gtkwave.sourceforge.net/).
